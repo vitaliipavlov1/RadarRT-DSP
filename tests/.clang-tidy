@@ -1,0 +1,21 @@
+---
+# Test-tree overrides. Inherits the repository-root policy and additionally relaxes a
+# few checks that fire only on patterns inherent to the in-repo test framework and to
+# the behaviour the tests deliberately exercise. The library policy stays strict; these
+# relaxations are scoped to tests/ alone.
+#
+#   * cppcoreguidelines-macro-usage  — RADAR_TEST / RADAR_EXPECT / RADAR_ASSERT are the
+#     test harness; self-registration and __FILE__/__LINE__ capture require macros.
+#   * bugprone-use-after-move        — a move test intentionally inspects the moved-from
+#     ManagedThread to prove ownership transferred (a well-defined query).
+#   * bugprone-empty-catch           — the harness catches its own FatalAssertion to abort
+#     a failed test; the failure is already recorded before the throw.
+#   * readability-named-parameter    — the fallback Printer specialization intentionally
+#     ignores its value parameter.
+InheritParentConfig: true
+Checks: >
+  -cppcoreguidelines-macro-usage,
+  -bugprone-use-after-move,
+  -bugprone-empty-catch,
+  -readability-named-parameter
+...

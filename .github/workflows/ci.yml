@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save runner time.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Quality gates: every preset is built and tested; the unit suite additionally runs
+# under AddressSanitizer/UBSan and ThreadSanitizer; clang-format and clang-tidy are
+# enforced. The gates use the same tool versions and invocations as the local
+# workflow documented in README.md.
+jobs:
+  build-test:
+    name: Build & test (${{ matrix.preset }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [debug, release]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tool versions
+        run: |
+          cmake --version
+          g++ --version
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+  sanitizers:
+    name: Sanitizers (${{ matrix.preset }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [asan-ubsan, tsan]
+    env:
+      # Make any sanitizer diagnostic abort the process so CTest reports a failure,
+      # rather than printing the report and exiting zero (UBSan/TSan are recoverable
+      # by default).
+      ASAN_OPTIONS: halt_on_error=1:abort_on_error=1:detect_leaks=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      TSAN_OPTIONS: halt_on_error=1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lower ASLR entropy for ThreadSanitizer
+        # Newer Ubuntu kernels default vm.mmap_rnd_bits too high for TSan's shadow
+        # memory mapping, which makes the binary abort with "unexpected memory
+        # mapping". Lowering it to 28 is the standard CI workaround (see README).
+        if: matrix.preset == 'tsan'
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format-18
+
+      - name: Check formatting
+        run: |
+          mapfile -t files < <(find include src app tests -type f \( -name '*.hpp' -o -name '*.cpp' \))
+          echo "Checking ${#files[@]} files with $(clang-format-18 --version)"
+          clang-format-18 --dry-run --Werror "${files[@]}"
+
+  tidy:
+    name: clang-tidy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install clang-tidy
+        run: sudo apt-get update && sudo apt-get install -y clang-tidy-18
+
+      - name: Configure (generate compile_commands.json)
+        # clang-tidy compiles each translation unit itself; it only needs the compile
+        # database, not a built tree. The debug preset exports compile_commands.json.
+        run: cmake --preset debug
+
+      - name: Run clang-tidy
+        # WarningsAsErrors is '*' in .clang-tidy, so any finding fails the job. tests/
+        # carries its own scoped overrides, picked up automatically per file.
+        run: |
+          mapfile -t files < <(find src app tests -type f -name '*.cpp')
+          echo "Linting ${#files[@]} translation units with $(clang-tidy-18 --version | head -1)"
+          clang-tidy-18 -p build/debug "${files[@]}"

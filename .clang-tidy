@@ -1,0 +1,87 @@
+---
+# Static analysis policy. Enforced as a CI gate.
+#
+# The policy keeps the high-value check families on by default (bugprone, concurrency,
+# cppcoreguidelines, modernize, performance, portability, readability) and disables
+# only the specific checks that do not apply to this codebase. Every disabled check is
+# listed below with its reason so the policy stays auditable rather than a blanket
+# opt-out. The remaining enabled checks pass cleanly across the whole tree.
+#
+# Disabled, grouped by reason:
+#
+#   Not satisfiable with the standard library alone (would require the GSL, which the
+#   project deliberately does not depend on):
+#     * cppcoreguidelines-pro-bounds-constant-array-index  (wants gsl::at)
+#     * cppcoreguidelines-pro-bounds-pointer-arithmetic    (C/POSIX API boundaries)
+#     * cppcoreguidelines-pro-bounded-array-to-pointer-decay
+#     * cppcoreguidelines-owning-memory                    (wants gsl::owner)
+#
+#   Intentional low-level realtime / POSIX code (RealtimeManager stack/heap prefault,
+#   SignalHandler signalfd/ppoll structs, PiMutex's pthread_mutex_t). Using containers
+#   or smart pointers here would defeat the page-faulting/locking purpose, and the C
+#   structs are populated field-by-field or by syscalls:
+#     * cppcoreguidelines-no-malloc
+#     * cppcoreguidelines-avoid-c-arrays
+#     * modernize-avoid-c-arrays
+#     * cppcoreguidelines-pro-type-member-init
+#     * concurrency-mt-unsafe                  (mallopt runs before any thread starts, D2)
+#     * bugprone-implicit-widening-of-multiplication-result  (constexpr byte literals)
+#
+#   Conflict with deliberate, documented design or value-semantics conventions:
+#     * readability-convert-member-functions-to-static  (DSP stages composed by value)
+#     * readability-redundant-member-init               (defensive value-initialization)
+#     * modernize-use-default-member-init
+#     * cppcoreguidelines-use-default-member-init
+#     * performance-move-const-arg                      (by-value sink-parameter idiom)
+#     * cppcoreguidelines-missing-std-forward           (visitor invoked once per loop item)
+#     * cppcoreguidelines-special-member-functions      (move-only compile-anchor helper)
+#     * modernize-return-braced-init-list               (explicit return types preferred)
+#     * performance-enum-size                           (domain enums; int base intended)
+#
+#   High false-positive rate in this codebase:
+#     * bugprone-unchecked-optional-access     (getter-returned optionals; custom asserts)
+#     * bugprone-easily-swappable-parameters   (constructor dependency injection)
+#
+#   Stylistic, intentionally not enforced:
+#     * modernize-use-trailing-return-type
+#     * readability-identifier-length
+#     * cppcoreguidelines-avoid-magic-numbers / readability-magic-numbers
+Checks: >
+  -*,
+  bugprone-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-magic-numbers,
+  -cppcoreguidelines-pro-bounded-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-no-malloc,
+  -cppcoreguidelines-avoid-c-arrays,
+  -modernize-avoid-c-arrays,
+  -cppcoreguidelines-pro-type-member-init,
+  -concurrency-mt-unsafe,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -readability-convert-member-functions-to-static,
+  -readability-redundant-member-init,
+  -modernize-use-default-member-init,
+  -cppcoreguidelines-use-default-member-init,
+  -performance-move-const-arg,
+  -cppcoreguidelines-missing-std-forward,
+  -cppcoreguidelines-special-member-functions,
+  -modernize-return-braced-init-list,
+  -performance-enum-size,
+  -bugprone-unchecked-optional-access,
+  -bugprone-easily-swappable-parameters
+
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/(include/radar|src|tests)/.*'
+FormatStyle: file
+...
